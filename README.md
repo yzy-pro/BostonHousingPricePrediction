@@ -11,7 +11,8 @@ https://www.kaggle.com/c/house-prices-advanced-regression-techniques
 #### 源代码
 main.py
 #### 训练数据
-house-prices-advanced-regression-techniques\test.csv\n
+house-prices-advanced-regression-techniques\test.csv
+
 house-prices-advanced-regression-techniques\train.csv
 #### 预测结果
 submission.csv
