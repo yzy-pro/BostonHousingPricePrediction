@@ -5,6 +5,27 @@ import pandas  # 用于数据处理
 import torch   # 用于深度学习
 import matplotlib.pyplot  # 用于绘制图形
 
+
+# 假设模型已经训练完并且在 net 中
+# 使用 torch.onnx.export 将模型导出为 ONNX 文件
+
+def export_to_onnx(model, input_data, onnx_file_name="model.onnx"):
+    # 将模型设置为评估模式（非常重要，否则导出的模型会在推理时出错）
+    model.eval()
+
+    # 导出模型
+    torch.onnx.export(
+        model,               # 模型
+        input_data,          # 输入示例数据
+        onnx_file_name,      # 输出文件名
+        export_params=True,  # 是否导出模型的参数
+        opset_version=12,    # ONNX opset 版本
+        do_constant_folding=True,  # 是否优化常量折叠
+        input_names=["input"],   # 输入节点的名称
+        output_names=["output"], # 输出节点的名称
+        dynamic_axes={"input": {0: "batch_size"}, "output": {0: "batch_size"}}  # 支持可变批量大小
+    )
+    print(f"模型已导出为 {onnx_file_name} 文件")
 # 读取数据
 train_data = pandas.read_csv(
     'house-prices-advanced-regression-techniques/train.csv')  # 训练数据集
@@ -133,12 +154,12 @@ def train_and_pred(train_features, test_features, train_labels, test_data,
                         num_epochs, lr, weight_decay, batch_size)  # 训练模型
 
     # 绘制训练损失曲线
-    matplotlib.pyplot.plot(range(1, num_epochs + 1), train_ls)
-    matplotlib.pyplot.xlabel('epoch')
-    matplotlib.pyplot.ylabel('log rmse')
-    matplotlib.pyplot.xlim([1, num_epochs])
-    matplotlib.pyplot.yscale('log')
-    matplotlib.pyplot.show()
+    # matplotlib.pyplot.plot(range(1, num_epochs + 1), train_ls)
+    # matplotlib.pyplot.xlabel('epoch')
+    # matplotlib.pyplot.ylabel('log rmse')
+    # matplotlib.pyplot.xlim([1, num_epochs])
+    # matplotlib.pyplot.yscale('log')
+    # matplotlib.pyplot.show()
 
     print(f'train log rmse：{train_ls[-1]:f}')
 
@@ -147,12 +168,11 @@ def train_and_pred(train_features, test_features, train_labels, test_data,
     test_data['SalePrice'] = pandas.Series(predictions.reshape(1, -1)[0])  # 将预测值保存到 test_data 中
     submission = pandas.concat([test_data['Id'], test_data['SalePrice']], axis=1)  # 创建提交结果
 
-    onnx_filename = "boston_housing_model.onnx"
-    dummy_input = torch.randn(1, train_features.shape[1])  # Match input
-    # dimensions
-    torch.onnx.export(net, dummy_input, onnx_filename, export_params=True,
-                      opset_version=11)
-
+    torch.save(net.state_dict(), "model.pth")
+    # 选择一个输入数据（假设输入数据的形状与训练数据一致）
+    dummy_input = torch.randn(1,
+                              processed_train_datas.shape[1])  # 假设输入维度与训练数据相同
+    export_to_onnx(net, dummy_input, "house_price_model.onnx")  # 导出为 ONNX 文件
     return submission
 
 ## 超参数设置
@@ -173,5 +193,6 @@ submission = train_and_pred(processed_train_datas, processed_test_datas,
 
 # 将预测结果保存到 CSV 文件
 submission.to_csv('submission.csv', index=False)
+
 
 
