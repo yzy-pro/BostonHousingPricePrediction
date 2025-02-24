@@ -24,3 +24,5 @@ https://www.kaggle.com/c/house-prices-advanced-regression-techniques
 [house_price_model.onnx](house_price_model.onnx)
 #### 模型的可视化图片
 [house_price_model.onnx.png](house_price_model.onnx.png)
+#### 训练过程可视化曲线图和绘图代码
+[training_plots](training_plots)
