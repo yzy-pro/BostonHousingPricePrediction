@@ -116,14 +116,14 @@ if __name__ == "__main__":
               num_hidden_layers=num_hidden_layers).to(device)
     train_loss, valid_loss = train(net, train_features, train_labels,
                                    valid_features, valid_labels,
-                                   num_epochs=10000,
-                                   learning_rate=0.00005, weight_decay=1e-4,
+                                   num_epochs=1000,
+                                   learning_rate=0.00005, weight_decay=1e-3,
                                    batch_size=128, device=device)
 
     # 绘制损失随 epoch 变化的图
     os.makedirs("training_plots", exist_ok=True)
-    plt.plot(range(1, 10001), train_loss, label='Training Loss')
-    plt.plot(range(1, 10001), valid_loss, label='Validation Loss',
+    plt.plot(range(1, 1001), train_loss, label='Training Loss')
+    plt.plot(range(1, 1001), valid_loss, label='Validation Loss',
              linestyle='--')
     plt.ylim(0, 1)
     plt.xlabel('Epochs')
