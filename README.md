@@ -9,6 +9,8 @@ https://www.kaggle.com/c/house-prices-advanced-regression-techniques
 基于pytroch的MLP
 #### requirements
 [requirements.txt](requirements.txt)
+#### 主要参考文献（代码参考）
+张奥森, Zachary C. Lipton, 李沐, Alexander J. Smola. 动手学深度学习[M]. 机械工业出版社, 2021.
 ### 项目成果
 #### 源代码
 [main.py](main.py)（基础版本）
@@ -24,5 +26,5 @@ https://www.kaggle.com/c/house-prices-advanced-regression-techniques
 [house_price_model.onnx](house_price_model.onnx)
 #### 模型的可视化图片
 [house_price_model.onnx.png](house_price_model.onnx.png)
-#### 训练过程可视化曲线图和绘图代码
+#### 训练可视化曲线图和绘图代码
 [training_plots](training_plots)
