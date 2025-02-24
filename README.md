@@ -22,5 +22,5 @@ https://www.kaggle.com/c/house-prices-advanced-regression-techniques
 [submission.csv](submission.csv)
 #### 导出的onnx模型
 [house_price_model.onnx](house_price_model.onnx)
-#### 可视化图片
+#### 模型的可视化图片
 [house_price_model.onnx.png](house_price_model.onnx.png)
