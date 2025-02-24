@@ -2,21 +2,19 @@ import os
 import pandas  # 用于数据处理
 import torch   # 用于深度学习
 import matplotlib.pyplot  # 用于绘制图形
+import torch.onnx  # 用于导出 ONNX 模型
+import netron  # 用于模型可视化
 
 # 设置环境变量，解决在使用 PyTorch 时，可能会遇到的 OpenMP 相关问题
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
 # 读取数据
-train_data = pandas.read_csv(
-    'house-prices-advanced-regression-techniques/train.csv')  # 训练数据集
-test_data = pandas.read_csv(
-    'house-prices-advanced-regression-techniques/test.csv')  # 测试数据集
-processed_datas = pandas.concat(
-    (train_data.iloc[:, 1:-1], test_data.iloc[:, 1:]))  # 合并训练集和测试集（去除 ID 列和目标标签列）
+train_data = pandas.read_csv('house-prices-advanced-regression-techniques/train.csv')  # 训练数据集
+test_data = pandas.read_csv('house-prices-advanced-regression-techniques/test.csv')  # 测试数据集
+processed_datas = pandas.concat((train_data.iloc[:, 1:-1], test_data.iloc[:, 1:]))  # 合并训练集和测试集（去除 ID 列和目标标签列）
 
 # 标准化数据
-numeric_features = (
-    processed_datas.dtypes[processed_datas.dtypes != 'object'].index)  # 获取所有数值型特征的列名
+numeric_features = processed_datas.dtypes[processed_datas.dtypes != 'object'].index  # 获取所有数值型特征的列名
 processed_datas[numeric_features] = processed_datas[numeric_features].apply(
     lambda x: (x - x.mean()) / (x.std()))  # 对数值特征进行标准化处理
 processed_datas[numeric_features] = processed_datas[numeric_features].fillna(0)  # 填充缺失值为 0
@@ -27,25 +25,20 @@ processed_datas = pandas.get_dummies(processed_datas, dummy_na=True)  # 对所�
 # 将数据转换为 Tensor 类型，以便在 PyTorch 中使用
 processed_datas = processed_datas.astype('float32')  # 转换数据类型为 float32
 n_train = train_data.shape[0]  # 获取训练集的样本数量
-processed_train_datas = torch.tensor(processed_datas[:n_train].values,
-                                     dtype=torch.float32)  # 将训练集数据转换为 Tensor
-processed_test_datas = torch.tensor(processed_datas[n_train:].values,
-                                    dtype=torch.float32)  # 将测试集数据转换为 Tensor
-train_labels = torch.tensor(train_data.SalePrice.values.reshape(-1, 1),
-                            dtype=torch.float32)  # 获取训练集标签并转换为 Tensor
+processed_train_datas = torch.tensor(processed_datas[:n_train].values, dtype=torch.float32)  # 将训练集数据转换为 Tensor
+processed_test_datas = torch.tensor(processed_datas[n_train:].values, dtype=torch.float32)  # 将测试集数据转换为 Tensor
+train_labels = torch.tensor(train_data.SalePrice.values.reshape(-1, 1), dtype=torch.float32)  # 获取训练集标签并转换为 Tensor
 
 # 定义一个多层感知机 (MLP) 模型
 class MLP(torch.nn.Module):
     def __init__(self, in_features, hidden_units=256, num_hidden_layers=3):
         super(MLP, self).__init__()
         self.hidden_layers = torch.nn.ModuleList()
-        self.hidden_layers.append(
-            torch.nn.Linear(in_features, hidden_units))  # 第一层输入到隐藏层
+        self.hidden_layers.append(torch.nn.Linear(in_features, hidden_units))  # 第一层输入到隐藏层
 
         # 添加剩余的隐藏层
         for _ in range(num_hidden_layers - 1):
-            self.hidden_layers.append(
-                torch.nn.Linear(hidden_units, hidden_units))  # 每个隐藏层都连接到前一个隐藏层
+            self.hidden_layers.append(torch.nn.Linear(hidden_units, hidden_units))  # 每个隐藏层都连接到前一个隐藏层
 
         self.output = torch.nn.Linear(hidden_units, 1)  # 最后一层输出预测值
         self.relu = torch.nn.ReLU()  # ReLU 激活函数
@@ -90,9 +83,7 @@ def train(net, train_features, train_labels, test_features, test_labels,
             test_loss.append(log_rmse(net, test_features, test_labels, device))  # 计算并记录验证集的 RMSE
 
         if (epoch + 1) % 100 == 0:  # 每 100 个 epoch 输出一次训练信息
-            print(
-                f'Epoch {epoch + 1}/{num_epochs}'
-                f', Train RMSE: {train_loss[-1]:.6f}')
+            print(f'Epoch {epoch + 1}/{num_epochs}, Train RMSE: {train_loss[-1]:.6f}')
 
     return train_loss, test_loss
 
@@ -148,7 +139,11 @@ def train_and_pred(train_features, test_features, train_labels, test_data,
 
     # 进行预测
     predictions = net(test_features.to(device))  # 将测试数据移到同一设备上
-    return predictions
+    return net, predictions  # 返回训练好的模型和预测结果
+
+# 导出模型为 ONNX 格式
+def export_model_to_onnx(model, input_tensor, onnx_filename='model.onnx'):
+    torch.onnx.export(model, input_tensor, onnx_filename, verbose=True, input_names=['input'], output_names=['output'])
 
 # 主函数
 if __name__ == "__main__":
@@ -170,11 +165,17 @@ if __name__ == "__main__":
           f'average valid log rmse: {valid_l:f}')
 
     # 训练并生成预测结果
-    predictions = train_and_pred(processed_train_datas, processed_test_datas,
-                                 train_labels, test_data, num_epochs, learning_rate,
-                                 weight_decay, batch_size, num_hidden_layers, device)
+    net, predictions = train_and_pred(processed_train_datas, processed_test_datas,
+                                      train_labels, test_data, num_epochs, learning_rate,
+                                      weight_decay, batch_size, num_hidden_layers, device)
 
     # 保存预测结果
     test_data['SalePrice'] = pandas.Series(predictions.detach().cpu().numpy().reshape(-1))  # 转移到CPU，避免GPU内存占用过多
     submission = pandas.concat([test_data['Id'], test_data['SalePrice']], axis=1)  # 创建提交结果
     submission.to_csv('submission.csv', index=False)
+
+    # 导出训练好的模型为 ONNX 格式
+    export_model_to_onnx(net, processed_train_datas[0:1].to(device), onnx_filename='house_price_model.onnx')
+
+    # 使用 netron 展示模型结构图
+    netron.start('house_price_model.onnx')  # 启动 netron 可视化模型
