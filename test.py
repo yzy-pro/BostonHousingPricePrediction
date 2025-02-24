@@ -1,42 +1,20 @@
 import os
-os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"  # 解决在使用 PyTorch 时，可能会遇到的 OpenMP 相关问题
-
 import pandas  # 用于数据处理
 import torch   # 用于深度学习
 import matplotlib.pyplot  # 用于绘制图形
+import torch.onnx  # 用于导出 ONNX 模型
+import netron  # 用于模型可视化
 
+# 设置环境变量，解决在使用 PyTorch 时，可能会遇到的 OpenMP 相关问题
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
-# 假设模型已经训练完并且在 net 中
-# 使用 torch.onnx.export 将模型导出为 ONNX 文件
-
-def export_to_onnx(model, input_data, onnx_file_name="model.onnx"):
-    # 将模型设置为评估模式（非常重要，否则导出的模型会在推理时出错）
-    model.eval()
-
-    # 导出模型
-    torch.onnx.export(
-        model,               # 模型
-        input_data,          # 输入示例数据
-        onnx_file_name,      # 输出文件名
-        export_params=True,  # 是否导出模型的参数
-        opset_version=12,    # ONNX opset 版本
-        do_constant_folding=True,  # 是否优化常量折叠
-        input_names=["input"],   # 输入节点的名称
-        output_names=["output"], # 输出节点的名称
-        dynamic_axes={"input": {0: "batch_size"}, "output": {0: "batch_size"}}  # 支持可变批量大小
-    )
-    print(f"模型已导出为 {onnx_file_name} 文件")
 # 读取数据
-train_data = pandas.read_csv(
-    'house-prices-advanced-regression-techniques/train.csv')  # 训练数据集
-test_data = pandas.read_csv(
-    'house-prices-advanced-regression-techniques/test.csv')  # 测试数据集
-processed_datas = pandas.concat(
-    (train_data.iloc[:, 1:-1], test_data.iloc[:, 1:]))  # 合并训练集和测试集（去除 ID 列和目标标签列）
+train_data = pandas.read_csv('house-prices-advanced-regression-techniques/train.csv')  # 训练数据集
+test_data = pandas.read_csv('house-prices-advanced-regression-techniques/test.csv')  # 测试数据集
+processed_datas = pandas.concat((train_data.iloc[:, 1:-1], test_data.iloc[:, 1:]))  # 合并训练集和测试集（去除 ID 列和目标标签列）
 
 # 标准化数据
-numeric_features = (
-    processed_datas.dtypes[processed_datas.dtypes != 'object'].index)  # 获取所有数值型特征的列名
+numeric_features = processed_datas.dtypes[processed_datas.dtypes != 'object'].index  # 获取所有数值型特征的列名
 processed_datas[numeric_features] = processed_datas[numeric_features].apply(
     lambda x: (x - x.mean()) / (x.std()))  # 对数值特征进行标准化处理
 processed_datas[numeric_features] = processed_datas[numeric_features].fillna(0)  # 填充缺失值为 0
@@ -47,25 +25,20 @@ processed_datas = pandas.get_dummies(processed_datas, dummy_na=True)  # 对所�
 # 将数据转换为 Tensor 类型，以便在 PyTorch 中使用
 processed_datas = processed_datas.astype('float32')  # 转换数据类型为 float32
 n_train = train_data.shape[0]  # 获取训练集的样本数量
-processed_train_datas = torch.tensor(processed_datas[:n_train].values,
-                                     dtype=torch.float32)  # 将训练集数据转换为 Tensor
-processed_test_datas = torch.tensor(processed_datas[n_train:].values,
-                                    dtype=torch.float32)  # 将测试集数据转换为 Tensor
-train_labels = torch.tensor(train_data.SalePrice.values.reshape(-1, 1),
-                            dtype=torch.float32)  # 获取训练集标签并转换为 Tensor
+processed_train_datas = torch.tensor(processed_datas[:n_train].values, dtype=torch.float32)  # 将训练集数据转换为 Tensor
+processed_test_datas = torch.tensor(processed_datas[n_train:].values, dtype=torch.float32)  # 将测试集数据转换为 Tensor
+train_labels = torch.tensor(train_data.SalePrice.values.reshape(-1, 1), dtype=torch.float32)  # 获取训练集标签并转换为 Tensor
 
 # 定义一个多层感知机 (MLP) 模型
 class MLP(torch.nn.Module):
     def __init__(self, in_features, hidden_units=256, num_hidden_layers=3):
         super(MLP, self).__init__()
         self.hidden_layers = torch.nn.ModuleList()
-        self.hidden_layers.append(
-            torch.nn.Linear(in_features, hidden_units))  # 第一层输入到隐藏层
+        self.hidden_layers.append(torch.nn.Linear(in_features, hidden_units))  # 第一层输入到隐藏层
 
         # 添加剩余的隐藏层
         for _ in range(num_hidden_layers - 1):
-            self.hidden_layers.append(
-                torch.nn.Linear(hidden_units, hidden_units))  # 每个隐藏层都连接到前一个隐藏层
+            self.hidden_layers.append(torch.nn.Linear(hidden_units, hidden_units))  # 每个隐藏层都连接到前一个隐藏层
 
         self.output = torch.nn.Linear(hidden_units, 1)  # 最后一层输出预测值
         self.relu = torch.nn.ReLU()  # ReLU 激活函数
@@ -80,14 +53,16 @@ class MLP(torch.nn.Module):
 loss_fn = torch.nn.MSELoss()
 
 # 计算训练日志 RMSE（均方根误差）
-def log_rmse(net, features, labels):
+def log_rmse(net, features, labels, device):
+    features = features.to(device)  # 将数据移到同一设备上
+    labels = labels.to(device)      # 将标签移到同一设备上
     clipped_preds = torch.clamp(net(features), min=1.0)  # 对预测值做裁剪，确保预测值不小于 1
     rmse = torch.sqrt(loss_fn(torch.log(clipped_preds), torch.log(labels)))  # 对数 RMSE
     return rmse.item()
 
 # 训练函数
 def train(net, train_features, train_labels, test_features, test_labels,
-          num_epochs, learning_rate, weight_decay, batch_size):
+          num_epochs, learning_rate, weight_decay, batch_size, device):
     train_loss, test_loss = [], []
     train_iter = torch.utils.data.DataLoader(
         torch.utils.data.TensorDataset(train_features, train_labels),
@@ -97,19 +72,18 @@ def train(net, train_features, train_labels, test_features, test_labels,
 
     for epoch in range(num_epochs):
         for X, y in train_iter:  # 对每个 batch 进行训练
+            X, y = X.to(device), y.to(device)  # 将数据移到同一设备
             optimizer.zero_grad()  # 清除梯度
             loss = loss_fn(net(X), y)  # 计算当前 batch 的损失
             loss.backward()  # 反向传播
             optimizer.step()  # 更新模型参数
 
-        train_loss.append(log_rmse(net, train_features, train_labels))  # 计算并记录训练集的 RMSE
+        train_loss.append(log_rmse(net, train_features, train_labels, device))  # 计算并记录训练集的 RMSE
         if test_labels is not None:
-            test_loss.append(log_rmse(net, test_features, test_labels))  # 计算并记录验证集的 RMSE
+            test_loss.append(log_rmse(net, test_features, test_labels, device))  # 计算并记录验证集的 RMSE
 
         if (epoch + 1) % 100 == 0:  # 每 100 个 epoch 输出一次训练信息
-            print(
-                f'Epoch {epoch + 1}/{num_epochs}'
-                f', Train RMSE: {train_loss[-1]:.6f}')
+            print(f'Epoch {epoch + 1}/{num_epochs}, Train RMSE: {train_loss[-1]:.6f}')
 
     return train_loss, test_loss
 
@@ -132,13 +106,13 @@ def get_k_fold_data(k, i, X, y):
 
 # 执行 K 折交叉验证
 def k_fold(k, X_train, y_train, num_epochs, learning_rate, weight_decay,
-           batch_size, num_hidden_layers):
+           batch_size, num_hidden_layers, device):
     train_loss_sum, valid_loss_sum = 0, 0
     for i in range(k):
         data = get_k_fold_data(k, i, X_train, y_train)
-        net = MLP(in_features=X_train.shape[1], num_hidden_layers=num_hidden_layers)
+        net = MLP(in_features=X_train.shape[1], num_hidden_layers=num_hidden_layers).to(device)
         train_loss, valid_loss = train(net, *data, num_epochs, learning_rate,
-                                       weight_decay, batch_size)  # 训练模型并获取损失值
+                                       weight_decay, batch_size, device)  # 训练模型并获取损失值
         train_loss_sum += train_loss[-1]  # 累加训练损失
         valid_loss_sum += valid_loss[-1]  # 累加验证损失
 
@@ -146,53 +120,62 @@ def k_fold(k, X_train, y_train, num_epochs, learning_rate, weight_decay,
 
 # 训练并进行预测
 def train_and_pred(train_features, test_features, train_labels, test_data,
-                   num_epochs, lr, weight_decay, batch_size, num_hidden_layers):
+                   num_epochs, lr, weight_decay, batch_size, num_hidden_layers, device):
     net = MLP(in_features=train_features.shape[1],
               num_hidden_layers=num_hidden_layers,
-              hidden_units=hidden_units)  # 初始化模型
+              hidden_units=256).to(device)  # 初始化模型并移到设备上
     train_ls, _ = train(net, train_features, train_labels, None, None,
-                        num_epochs, lr, weight_decay, batch_size)  # 训练模型
+                        num_epochs, lr, weight_decay, batch_size, device)  # 训练模型
 
     # 绘制训练损失曲线
-    # matplotlib.pyplot.plot(range(1, num_epochs + 1), train_ls)
-    # matplotlib.pyplot.xlabel('epoch')
-    # matplotlib.pyplot.ylabel('log rmse')
-    # matplotlib.pyplot.xlim([1, num_epochs])
-    # matplotlib.pyplot.yscale('log')
-    # matplotlib.pyplot.show()
+    matplotlib.pyplot.plot(range(1, num_epochs + 1), train_ls)
+    matplotlib.pyplot.xlabel('epoch')
+    matplotlib.pyplot.ylabel('log rmse')
+    matplotlib.pyplot.xlim([1, num_epochs])
+    matplotlib.pyplot.yscale('log')
+    matplotlib.pyplot.show()
 
     print(f'train log rmse：{train_ls[-1]:f}')
 
     # 进行预测
-    predictions = net(test_features).detach().numpy()  # 用训练好的模型进行预测
-    test_data['SalePrice'] = pandas.Series(predictions.reshape(1, -1)[0])  # 将预测值保存到 test_data 中
+    predictions = net(test_features.to(device))  # 将测试数据移到同一设备上
+    return net, predictions  # 返回训练好的模型和预测结果
+
+# 导出模型为 ONNX 格式
+def export_model_to_onnx(model, input_tensor, onnx_filename='model.onnx'):
+    torch.onnx.export(model, input_tensor, onnx_filename, verbose=True, input_names=['input'], output_names=['output'])
+
+# 主函数
+if __name__ == "__main__":
+    device = torch.device('xpu' if torch.xpu.is_available() else 'cpu')  # 使用
+    # CUDA 设备
+    print(f'Using device: {device}')
+
+    # 执行 K 折交叉验证
+    k = 2
+    num_epochs = 100
+    learning_rate = 0.00005
+    weight_decay = 1e-4
+    batch_size = 128
+    num_hidden_layers = 3
+
+    train_l, valid_l = k_fold(k, processed_train_datas, train_labels, num_epochs,
+                              learning_rate, weight_decay, batch_size, num_hidden_layers, device)
+    print(f'{k}-fold: average train log rmse: {train_l:f}, '
+          f'average valid log rmse: {valid_l:f}')
+
+    # 训练并生成预测结果
+    net, predictions = train_and_pred(processed_train_datas, processed_test_datas,
+                                      train_labels, test_data, num_epochs, learning_rate,
+                                      weight_decay, batch_size, num_hidden_layers, device)
+
+    # 保存预测结果
+    test_data['SalePrice'] = pandas.Series(predictions.detach().cpu().numpy().reshape(-1))  # 转移到CPU，避免GPU内存占用过多
     submission = pandas.concat([test_data['Id'], test_data['SalePrice']], axis=1)  # 创建提交结果
+    submission.to_csv('submission.csv', index=False)
 
-    torch.save(net.state_dict(), "model.pth")
-    # 选择一个输入数据（假设输入数据的形状与训练数据一致）
-    dummy_input = torch.randn(1,
-                              processed_train_datas.shape[1])  # 假设输入维度与训练数据相同
-    export_to_onnx(net, dummy_input, "house_price_model.onnx")  # 导出为 ONNX 文件
-    return submission
+    # 导出训练好的模型为 ONNX 格式
+    export_model_to_onnx(net, processed_train_datas[0:1].to(device), onnx_filename='house_price_model.onnx')
 
-## 超参数设置
-(k, num_epochs, learing_rate, weight_decay, batch_size, num_hidden_layers ,
- hidden_units)= \
-    (2, 100, 0.005, 1e-4, 128, 3, 256)
-
-# 执行 K 折交叉验证
-train_l, valid_l = k_fold(k, processed_train_datas, train_labels, num_epochs,
-                          learing_rate, weight_decay, batch_size, num_hidden_layers)
-print(f'{k}-fold: average train log rmse: {train_l:f}, '
-      f'average valid log rmse: {valid_l:f}')
-
-# 训练并生成预测结果
-submission = train_and_pred(processed_train_datas, processed_test_datas,
-                      train_labels,
-               test_data, num_epochs, learing_rate, weight_decay, batch_size, num_hidden_layers)
-
-# 将预测结果保存到 CSV 文件
-submission.to_csv('submission.csv', index=False)
-
-
-
+    # 使用 netron 展示模型结构图
+    netron.start('house_price_model.onnx')  # 启动 netron 可视化模型
