@@ -11,6 +11,7 @@ https://www.kaggle.com/c/house-prices-advanced-regression-techniques
 [requirements.txt](requirements.txt)
 #### 主要参考文献（代码参考）
 张奥森, Zachary C. Lipton, 李沐, Alexander J. Smola. 动手学深度学习[M]. 机械工业出版社, 2021.
+[kaggle-house-price.ipynb](kaggle-house-price.ipynb)
 ### 项目成果
 #### 源代码
 [main.py](main.py)（基础版本）
